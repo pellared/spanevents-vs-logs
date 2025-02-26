@@ -6,12 +6,14 @@ import (
 	"strconv"
 	"testing"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	logapi "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/trace"
 	traceapi "go.opentelemetry.io/otel/trace"
@@ -19,23 +21,34 @@ import (
 
 func BenchmarkSpanEvents(b *testing.B) {
 	testCases := []struct {
-		name       string
-		traceExpFn func(b *testing.B) trace.SpanExporter
+		name     string
+		tracerFn func(b *testing.B) traceapi.Tracer
 	}{
 		{
-			name:       "OTLP",
-			traceExpFn: setupOTLPTraceExporter,
+			name: "OTLP",
+			tracerFn: func(b *testing.B) traceapi.Tracer {
+				traceExp := setupOTLPTraceExporter(b)
+				return setupTracing(b, traceExp)
+			},
 		},
 		{
-			name:       "STDOUT",
-			traceExpFn: setupSTDOUTTraceExporter,
+			name: "STDOUT",
+			tracerFn: func(b *testing.B) traceapi.Tracer {
+				traceExp := setupSTDOUTTraceExporter(b)
+				return setupTracing(b, traceExp)
+			},
+		},
+		{
+			name: "NOOP",
+			tracerFn: func(b *testing.B) traceapi.Tracer {
+				return otel.Tracer(b.Name())
+			},
 		},
 	}
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			// setup
-			traceExp := tc.traceExpFn(b)
-			tracer := setupTracing(b, traceExp)
+			tracer := tc.tracerFn(b)
 
 			for b.Loop() {
 				// code to measure
@@ -58,28 +71,47 @@ func BenchmarkSpanEvents(b *testing.B) {
 
 func BenchmarkLogs(b *testing.B) {
 	testCases := []struct {
-		name       string
-		traceExpFn func(b *testing.B) trace.SpanExporter
-		logExpFn   func(b *testing.B) log.Exporter
+		name     string
+		tracerFn func(b *testing.B) traceapi.Tracer
+		loggerFn func(b *testing.B) logapi.Logger
 	}{
 		{
-			name:       "OTLP",
-			traceExpFn: setupOTLPTraceExporter,
-			logExpFn:   setupOTLPLogExporter,
+			name: "OTLP",
+			tracerFn: func(b *testing.B) traceapi.Tracer {
+				traceExp := setupOTLPTraceExporter(b)
+				return setupTracing(b, traceExp)
+			},
+			loggerFn: func(b *testing.B) logapi.Logger {
+				logExp := setupOTLPLogExporter(b)
+				return setupLogging(b, logExp)
+			},
 		},
 		{
-			name:       "STDOUT",
-			traceExpFn: setupSTDOUTTraceExporter,
-			logExpFn:   setupSTDOUTLogExporter,
+			name: "STDOUT",
+			tracerFn: func(b *testing.B) traceapi.Tracer {
+				traceExp := setupSTDOUTTraceExporter(b)
+				return setupTracing(b, traceExp)
+			},
+			loggerFn: func(b *testing.B) logapi.Logger {
+				logExp := setupSTDOUTLogExporter(b)
+				return setupLogging(b, logExp)
+			},
+		},
+		{
+			name: "NOOP",
+			tracerFn: func(b *testing.B) traceapi.Tracer {
+				return otel.Tracer(b.Name())
+			},
+			loggerFn: func(b *testing.B) logapi.Logger {
+				return global.Logger(b.Name())
+			},
 		},
 	}
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			// setup
-			traceExp := tc.traceExpFn(b)
-			tracer := setupTracing(b, traceExp)
-			logExp := tc.logExpFn(b)
-			logger := setupLogging(b, logExp)
+			tracer := tc.tracerFn(b)
+			logger := tc.loggerFn(b)
 
 			for b.Loop() {
 				// code to measure
