@@ -122,6 +122,7 @@ func BenchmarkLogs(b *testing.B) {
 }
 
 func setupOTLPTraceExporter(b *testing.B) trace.SpanExporter {
+	b.Helper()
 	exp, err := otlptracehttp.New(context.Background(), otlptracehttp.WithInsecure())
 	if err != nil {
 		b.Fatalf("otlptracehttp.New: %v", err)
@@ -130,6 +131,7 @@ func setupOTLPTraceExporter(b *testing.B) trace.SpanExporter {
 }
 
 func setupSTDOUTTraceExporter(b *testing.B) trace.SpanExporter {
+	b.Helper()
 	exp, err := stdouttrace.New(stdouttrace.WithWriter(io.Discard))
 	if err != nil {
 		b.Fatalf("stdouttrace.New: %v", err)
@@ -138,6 +140,7 @@ func setupSTDOUTTraceExporter(b *testing.B) trace.SpanExporter {
 }
 
 func setupOTLPLogExporter(b *testing.B) log.Exporter {
+	b.Helper()
 	exp, err := otlploghttp.New(b.Context(), otlploghttp.WithInsecure())
 	if err != nil {
 		b.Fatalf("otlploghttp.New: %v", err)
@@ -146,6 +149,7 @@ func setupOTLPLogExporter(b *testing.B) log.Exporter {
 }
 
 func setupSTDOUTLogExporter(b *testing.B) log.Exporter {
+	b.Helper()
 	exp, err := stdoutlog.New(stdoutlog.WithWriter(io.Discard))
 	if err != nil {
 		b.Fatalf("stdoutlog.New: %v", err)
