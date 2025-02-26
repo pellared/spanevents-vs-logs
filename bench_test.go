@@ -64,6 +64,7 @@ func BenchmarkSpanEvents(b *testing.B) {
 	}
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
+			// setup
 			tracerProvider := trace.NewTracerProvider(
 				trace.WithBatcher(tc.expFn(b)))
 			b.Cleanup(func() {
@@ -74,6 +75,7 @@ func BenchmarkSpanEvents(b *testing.B) {
 			tracer := tracerProvider.Tracer(b.Name())
 
 			for b.Loop() {
+				// code to measure
 				_, span := tracer.Start(context.Background(), b.Name())
 				for i := range 100 {
 					msg := strconv.Itoa(i)
@@ -155,6 +157,7 @@ func BenchmarkLogs(b *testing.B) {
 	}
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
+			// setup
 			tExp, lExp := tc.expFn(b)
 
 			tracerProvider := trace.NewTracerProvider(
@@ -176,6 +179,7 @@ func BenchmarkLogs(b *testing.B) {
 			logger := logProvider.Logger(b.Name())
 
 			for b.Loop() {
+				// code to measure
 				ctx, span := tracer.Start(b.Context(), b.Name())
 				for i := range 100 {
 					msg := strconv.Itoa(i)
