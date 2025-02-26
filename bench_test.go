@@ -2,12 +2,15 @@ package bench
 
 import (
 	"context"
+	"io"
 	"strconv"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	logapi "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/trace"
@@ -15,90 +18,132 @@ import (
 )
 
 func BenchmarkSpanEvents(b *testing.B) {
-	traceExporter, err := otlptracehttp.New(b.Context(), otlptracehttp.WithInsecure())
-	if err != nil {
-		b.Fatalf("otlptracehttp.New: %v", err)
+	testCases := []struct {
+		name  string
+		expFn func(b *testing.B) trace.SpanExporter
+	}{
+		{
+			name: "OTLP",
+			expFn: func(b *testing.B) trace.SpanExporter {
+				traceExporter, err := otlptracehttp.New(context.Background(), otlptracehttp.WithInsecure())
+				if err != nil {
+					b.Fatalf("otlptracehttp.New: %v", err)
+				}
+				return traceExporter
+			},
+		},
+		{
+			name: "STDOUT",
+			expFn: func(b *testing.B) trace.SpanExporter {
+				traceExporter, err := stdouttrace.New(stdouttrace.WithWriter(io.Discard))
+				if err != nil {
+					b.Fatalf("stdouttrace.New: %v", err)
+				}
+				return traceExporter
+			},
+		},
 	}
-	tracerProvider := trace.NewTracerProvider(
-		trace.WithBatcher(traceExporter))
-	b.Cleanup(func() {
-		if err := traceExporter.Shutdown(context.Background()); err != nil {
-			b.Fatalf("traceExporter.Shutdown: %v", err)
-		}
-	})
-	tracer := tracerProvider.Tracer(b.Name())
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			tracerProvider := trace.NewTracerProvider(
+				trace.WithBatcher(tc.expFn(b)))
+			b.Cleanup(func() {
+				if err := tracerProvider.Shutdown(context.Background()); err != nil {
+					b.Fatalf("tracerProvider.Shutdown: %v", err)
+				}
+			})
+			tracer := tracerProvider.Tracer(b.Name())
 
-	for b.Loop() {
-		for range 100 {
-			_, span := tracer.Start(b.Context(), b.Name())
-			for i := range 100 {
-				msg := strconv.Itoa(i)
-				span.AddEvent(msg, traceapi.WithAttributes(
-					attribute.Bool("b", true),
-					attribute.Float64("pi", 3.14),
-					attribute.Int("ten", 10),
-					attribute.String("foo", "bar"),
-				))
+			for b.Loop() {
+				_, span := tracer.Start(context.Background(), b.Name())
+				for i := range 100 {
+					msg := strconv.Itoa(i)
+					span.AddEvent(msg, traceapi.WithAttributes(
+						attribute.Bool("b", true),
+						attribute.Float64("pi", 3.14),
+						attribute.Int("ten", 10),
+						attribute.String("foo", "bar"),
+					))
+				}
+				span.End()
 			}
-			span.End()
-		}
-
-		if err := tracerProvider.ForceFlush(b.Context()); err != nil {
-			b.Fatalf("tracerProvider.ForceFlush: %v", err)
-		}
+		})
 	}
+
 }
 
 func BenchmarkLogs(b *testing.B) {
-	traceExporter, err := otlptracehttp.New(b.Context(), otlptracehttp.WithInsecure())
-	if err != nil {
-		b.Fatalf("otlptracehttp.New: %v", err)
+	testCases := []struct {
+		name  string
+		expFn func(b *testing.B) (trace.SpanExporter, log.Exporter)
+	}{
+		{
+			name: "OTLP",
+			expFn: func(b *testing.B) (trace.SpanExporter, log.Exporter) {
+				traceExporter, err := otlptracehttp.New(context.Background(), otlptracehttp.WithInsecure())
+				if err != nil {
+					b.Fatalf("otlptracehttp.New: %v", err)
+				}
+				logExporter, err := otlploghttp.New(b.Context(), otlploghttp.WithInsecure())
+				if err != nil {
+					b.Fatalf("otlploghttp.New: %v", err)
+				}
+				return traceExporter, logExporter
+			},
+		},
+		{
+			name: "STDOUT",
+			expFn: func(b *testing.B) (trace.SpanExporter, log.Exporter) {
+				traceExporter, err := stdouttrace.New(stdouttrace.WithWriter(io.Discard))
+				if err != nil {
+					b.Fatalf("stdouttrace.New: %v", err)
+				}
+				logExporter, err := stdoutlog.New(stdoutlog.WithWriter(io.Discard))
+				if err != nil {
+					b.Fatalf("stdoutlog.New: %v", err)
+				}
+				return traceExporter, logExporter
+			},
+		},
 	}
-	tracerProvider := trace.NewTracerProvider(
-		trace.WithBatcher(traceExporter))
-	b.Cleanup(func() {
-		if err := traceExporter.Shutdown(context.Background()); err != nil {
-			b.Fatalf("traceExporter.Shutdown: %v", err)
-		}
-	})
-	tracer := tracerProvider.Tracer(b.Name())
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			tExp, lExp := tc.expFn(b)
 
-	logExporter, err := otlploghttp.New(b.Context(), otlploghttp.WithInsecure())
-	if err != nil {
-		b.Fatalf("otlploghttp.New: %v", err)
-	}
-	logProvider := log.NewLoggerProvider(
-		log.WithProcessor(log.NewBatchProcessor(logExporter)))
-	b.Cleanup(func() {
-		if err := logProvider.Shutdown(context.Background()); err != nil {
-			b.Fatalf("logProvider.Shutdown: %v", err)
-		}
-	})
-	logger := logProvider.Logger(b.Name())
+			tracerProvider := trace.NewTracerProvider(
+				trace.WithBatcher(tExp))
+			b.Cleanup(func() {
+				if err := tracerProvider.Shutdown(context.Background()); err != nil {
+					b.Fatalf("tracerProvider.Shutdown: %v", err)
+				}
+			})
+			tracer := tracerProvider.Tracer(b.Name())
 
-	for b.Loop() {
-		for range 100 {
-			ctx, span := tracer.Start(b.Context(), b.Name())
-			for i := range 100 {
-				msg := strconv.Itoa(i)
-				var r logapi.Record
-				r.SetBody(logapi.StringValue(msg))
-				r.AddAttributes(
-					logapi.Bool("b", true),
-					logapi.Float64("pi", 3.14),
-					logapi.Int("ten", 10),
-					logapi.String("foo", "bar"),
-				)
-				logger.Emit(ctx, r)
+			logProvider := log.NewLoggerProvider(
+				log.WithProcessor(log.NewBatchProcessor(lExp)))
+			b.Cleanup(func() {
+				if err := logProvider.Shutdown(context.Background()); err != nil {
+					b.Fatalf("logProvider.Shutdown: %v", err)
+				}
+			})
+			logger := logProvider.Logger(b.Name())
+
+			for b.Loop() {
+				ctx, span := tracer.Start(b.Context(), b.Name())
+				for i := range 100 {
+					msg := strconv.Itoa(i)
+					var r logapi.Record
+					r.SetBody(logapi.StringValue(msg))
+					r.AddAttributes(
+						logapi.Bool("b", true),
+						logapi.Float64("pi", 3.14),
+						logapi.Int("ten", 10),
+						logapi.String("foo", "bar"),
+					)
+					logger.Emit(ctx, r)
+				}
+				span.End()
 			}
-			span.End()
-		}
-
-		if err := tracerProvider.ForceFlush(b.Context()); err != nil {
-			b.Fatalf("tracerProvider.ForceFlush: %v", err)
-		}
-		if err := logProvider.ForceFlush(b.Context()); err != nil {
-			b.Fatalf("logProvider.ForceFlush: %v", err)
-		}
+		})
 	}
 }
