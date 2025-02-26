@@ -19,35 +19,23 @@ import (
 
 func BenchmarkSpanEvents(b *testing.B) {
 	testCases := []struct {
-		name  string
-		expFn func(b *testing.B) trace.SpanExporter
+		name       string
+		traceExpFn func(b *testing.B) trace.SpanExporter
 	}{
 		{
-			name: "OTLP",
-			expFn: func(b *testing.B) trace.SpanExporter {
-				traceExporter, err := otlptracehttp.New(context.Background(), otlptracehttp.WithInsecure())
-				if err != nil {
-					b.Fatalf("otlptracehttp.New: %v", err)
-				}
-				return traceExporter
-			},
+			name:       "OTLP",
+			traceExpFn: setupOTLPTraceExporter,
 		},
 		{
-			name: "STDOUT",
-			expFn: func(b *testing.B) trace.SpanExporter {
-				traceExporter, err := stdouttrace.New(stdouttrace.WithWriter(io.Discard))
-				if err != nil {
-					b.Fatalf("stdouttrace.New: %v", err)
-				}
-				return traceExporter
-			},
+			name:       "STDOUT",
+			traceExpFn: setupSTDOUTTraceExporter,
 		},
 	}
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			// setup
 			tracerProvider := trace.NewTracerProvider(
-				trace.WithBatcher(tc.expFn(b)))
+				trace.WithBatcher(tc.traceExpFn(b)))
 			b.Cleanup(func() {
 				if err := tracerProvider.Shutdown(context.Background()); err != nil {
 					b.Fatalf("tracerProvider.Shutdown: %v", err)
@@ -76,45 +64,26 @@ func BenchmarkSpanEvents(b *testing.B) {
 
 func BenchmarkLogs(b *testing.B) {
 	testCases := []struct {
-		name  string
-		expFn func(b *testing.B) (trace.SpanExporter, log.Exporter)
+		name       string
+		traceExpFn func(b *testing.B) trace.SpanExporter
+		logExpFn   func(b *testing.B) log.Exporter
 	}{
 		{
-			name: "OTLP",
-			expFn: func(b *testing.B) (trace.SpanExporter, log.Exporter) {
-				traceExporter, err := otlptracehttp.New(context.Background(), otlptracehttp.WithInsecure())
-				if err != nil {
-					b.Fatalf("otlptracehttp.New: %v", err)
-				}
-				logExporter, err := otlploghttp.New(b.Context(), otlploghttp.WithInsecure())
-				if err != nil {
-					b.Fatalf("otlploghttp.New: %v", err)
-				}
-				return traceExporter, logExporter
-			},
+			name:       "OTLP",
+			traceExpFn: setupOTLPTraceExporter,
+			logExpFn:   setupOTLPLogExporter,
 		},
 		{
-			name: "STDOUT",
-			expFn: func(b *testing.B) (trace.SpanExporter, log.Exporter) {
-				traceExporter, err := stdouttrace.New(stdouttrace.WithWriter(io.Discard))
-				if err != nil {
-					b.Fatalf("stdouttrace.New: %v", err)
-				}
-				logExporter, err := stdoutlog.New(stdoutlog.WithWriter(io.Discard))
-				if err != nil {
-					b.Fatalf("stdoutlog.New: %v", err)
-				}
-				return traceExporter, logExporter
-			},
+			name:       "STDOUT",
+			traceExpFn: setupSTDOUTTraceExporter,
+			logExpFn:   setupSTDOUTLogExporter,
 		},
 	}
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			// setup
-			tExp, lExp := tc.expFn(b)
-
 			tracerProvider := trace.NewTracerProvider(
-				trace.WithBatcher(tExp))
+				trace.WithBatcher(tc.traceExpFn(b)))
 			b.Cleanup(func() {
 				if err := tracerProvider.Shutdown(context.Background()); err != nil {
 					b.Fatalf("tracerProvider.Shutdown: %v", err)
@@ -123,7 +92,7 @@ func BenchmarkLogs(b *testing.B) {
 			tracer := tracerProvider.Tracer(b.Name())
 
 			logProvider := log.NewLoggerProvider(
-				log.WithProcessor(log.NewBatchProcessor(lExp)))
+				log.WithProcessor(log.NewBatchProcessor(tc.logExpFn(b))))
 			b.Cleanup(func() {
 				if err := logProvider.Shutdown(context.Background()); err != nil {
 					b.Fatalf("logProvider.Shutdown: %v", err)
@@ -150,4 +119,36 @@ func BenchmarkLogs(b *testing.B) {
 			}
 		})
 	}
+}
+
+func setupOTLPTraceExporter(b *testing.B) trace.SpanExporter {
+	exp, err := otlptracehttp.New(context.Background(), otlptracehttp.WithInsecure())
+	if err != nil {
+		b.Fatalf("otlptracehttp.New: %v", err)
+	}
+	return exp
+}
+
+func setupSTDOUTTraceExporter(b *testing.B) trace.SpanExporter {
+	exp, err := stdouttrace.New(stdouttrace.WithWriter(io.Discard))
+	if err != nil {
+		b.Fatalf("stdouttrace.New: %v", err)
+	}
+	return exp
+}
+
+func setupOTLPLogExporter(b *testing.B) log.Exporter {
+	exp, err := otlploghttp.New(b.Context(), otlploghttp.WithInsecure())
+	if err != nil {
+		b.Fatalf("otlploghttp.New: %v", err)
+	}
+	return exp
+}
+
+func setupSTDOUTLogExporter(b *testing.B) log.Exporter {
+	exp, err := stdoutlog.New(stdoutlog.WithWriter(io.Discard))
+	if err != nil {
+		b.Fatalf("stdoutlog.New: %v", err)
+	}
+	return exp
 }
