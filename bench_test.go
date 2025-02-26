@@ -104,8 +104,7 @@ func BenchmarkLogs(b *testing.B) {
 
 func setupTracing(b *testing.B, exp trace.SpanExporter) traceapi.Tracer {
 	b.Helper()
-	tracerProvider := trace.NewTracerProvider(
-		trace.WithBatcher(exp))
+	tracerProvider := trace.NewTracerProvider(trace.WithBatcher(exp))
 	b.Cleanup(func() {
 		if err := tracerProvider.Shutdown(context.Background()); err != nil {
 			b.Fatalf("tracerProvider.Shutdown: %v", err)
@@ -116,8 +115,7 @@ func setupTracing(b *testing.B, exp trace.SpanExporter) traceapi.Tracer {
 
 func setupLogging(b *testing.B, exp log.Exporter) logapi.Logger {
 	b.Helper()
-	logProvider := log.NewLoggerProvider(
-		log.WithProcessor(log.NewBatchProcessor(exp)))
+	logProvider := log.NewLoggerProvider(log.WithProcessor(log.NewBatchProcessor(exp)))
 	b.Cleanup(func() {
 		if err := logProvider.Shutdown(context.Background()); err != nil {
 			b.Fatalf("logProvider.Shutdown: %v", err)
