@@ -3,6 +3,8 @@ package bench
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -36,6 +38,23 @@ func BenchmarkSpanEvents(b *testing.B) {
 			name: "STDOUT",
 			expFn: func(b *testing.B) trace.SpanExporter {
 				traceExporter, err := stdouttrace.New(stdouttrace.WithWriter(io.Discard))
+				if err != nil {
+					b.Fatalf("stdouttrace.New: %v", err)
+				}
+				return traceExporter
+			},
+		},
+		{
+			name: "FILE",
+			expFn: func(b *testing.B) trace.SpanExporter {
+				f, err := os.Create(filepath.Join(b.TempDir(), "traces.out"))
+				if err != nil {
+					b.Fatalf("os.Create: %v", err)
+				}
+				b.Cleanup(func() {
+					f.Close()
+				})
+				traceExporter, err := stdouttrace.New(stdouttrace.WithWriter(f))
 				if err != nil {
 					b.Fatalf("stdouttrace.New: %v", err)
 				}
@@ -99,6 +118,34 @@ func BenchmarkLogs(b *testing.B) {
 					b.Fatalf("stdouttrace.New: %v", err)
 				}
 				logExporter, err := stdoutlog.New(stdoutlog.WithWriter(io.Discard))
+				if err != nil {
+					b.Fatalf("stdoutlog.New: %v", err)
+				}
+				return traceExporter, logExporter
+			},
+		},
+		{
+			name: "FILE",
+			expFn: func(b *testing.B) (trace.SpanExporter, log.Exporter) {
+				f, err := os.Create(filepath.Join(b.TempDir(), "traces.out"))
+				if err != nil {
+					b.Fatalf("os.Create: %v", err)
+				}
+				b.Cleanup(func() {
+					f.Close()
+				})
+				traceExporter, err := stdouttrace.New(stdouttrace.WithWriter(f))
+				if err != nil {
+					b.Fatalf("stdouttrace.New: %v", err)
+				}
+				f, err = os.Create(filepath.Join(b.TempDir(), "logs.out"))
+				if err != nil {
+					b.Fatalf("os.Create: %v", err)
+				}
+				b.Cleanup(func() {
+					f.Close()
+				})
+				logExporter, err := stdoutlog.New(stdoutlog.WithWriter(f))
 				if err != nil {
 					b.Fatalf("stdoutlog.New: %v", err)
 				}
