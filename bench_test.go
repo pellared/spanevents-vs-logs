@@ -34,14 +34,8 @@ func BenchmarkSpanEvents(b *testing.B) {
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			// setup
-			tracerProvider := trace.NewTracerProvider(
-				trace.WithBatcher(tc.traceExpFn(b)))
-			b.Cleanup(func() {
-				if err := tracerProvider.Shutdown(context.Background()); err != nil {
-					b.Fatalf("tracerProvider.Shutdown: %v", err)
-				}
-			})
-			tracer := tracerProvider.Tracer(b.Name())
+			traceExp := tc.traceExpFn(b)
+			tracer := setupTracing(b, traceExp)
 
 			for b.Loop() {
 				// code to measure
@@ -82,23 +76,10 @@ func BenchmarkLogs(b *testing.B) {
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			// setup
-			tracerProvider := trace.NewTracerProvider(
-				trace.WithBatcher(tc.traceExpFn(b)))
-			b.Cleanup(func() {
-				if err := tracerProvider.Shutdown(context.Background()); err != nil {
-					b.Fatalf("tracerProvider.Shutdown: %v", err)
-				}
-			})
-			tracer := tracerProvider.Tracer(b.Name())
-
-			logProvider := log.NewLoggerProvider(
-				log.WithProcessor(log.NewBatchProcessor(tc.logExpFn(b))))
-			b.Cleanup(func() {
-				if err := logProvider.Shutdown(context.Background()); err != nil {
-					b.Fatalf("logProvider.Shutdown: %v", err)
-				}
-			})
-			logger := logProvider.Logger(b.Name())
+			traceExp := tc.traceExpFn(b)
+			tracer := setupTracing(b, traceExp)
+			logExp := tc.logExpFn(b)
+			logger := setupLogging(b, logExp)
 
 			for b.Loop() {
 				// code to measure
@@ -119,6 +100,30 @@ func BenchmarkLogs(b *testing.B) {
 			}
 		})
 	}
+}
+
+func setupTracing(b *testing.B, exp trace.SpanExporter) traceapi.Tracer {
+	b.Helper()
+	tracerProvider := trace.NewTracerProvider(
+		trace.WithBatcher(exp))
+	b.Cleanup(func() {
+		if err := tracerProvider.Shutdown(context.Background()); err != nil {
+			b.Fatalf("tracerProvider.Shutdown: %v", err)
+		}
+	})
+	return tracerProvider.Tracer(b.Name())
+}
+
+func setupLogging(b *testing.B, exp log.Exporter) logapi.Logger {
+	b.Helper()
+	logProvider := log.NewLoggerProvider(
+		log.WithProcessor(log.NewBatchProcessor(exp)))
+	b.Cleanup(func() {
+		if err := logProvider.Shutdown(context.Background()); err != nil {
+			b.Fatalf("logProvider.Shutdown: %v", err)
+		}
+	})
+	return logProvider.Logger(b.Name())
 }
 
 func setupOTLPTraceExporter(b *testing.B) trace.SpanExporter {
