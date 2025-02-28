@@ -19,6 +19,87 @@ import (
 	traceapi "go.opentelemetry.io/otel/trace"
 )
 
+func BenchmarkSpan(b *testing.B) {
+	testCases := []struct {
+		name     string
+		tracerFn func(b *testing.B) traceapi.Tracer
+	}{
+		{
+			name: "OTLP",
+			tracerFn: func(b *testing.B) traceapi.Tracer {
+				traceExp := setupOTLPTraceExporter(b)
+				return setupTracing(b, traceExp)
+			},
+		},
+		{
+			name: "STDOUT",
+			tracerFn: func(b *testing.B) traceapi.Tracer {
+				traceExp := setupSTDOUTTraceExporter(b)
+				return setupTracing(b, traceExp)
+			},
+		},
+		{
+			name: "NOOP",
+			tracerFn: func(b *testing.B) traceapi.Tracer {
+				return otel.Tracer(b.Name())
+			},
+		},
+	}
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			// setup
+			tracer := tc.tracerFn(b)
+
+			for b.Loop() {
+				// code to measure
+				_, span := tracer.Start(context.Background(), b.Name())
+				span.End()
+			}
+		})
+	}
+
+}
+
+func BenchmarkLog(b *testing.B) {
+	testCases := []struct {
+		name     string
+		loggerFn func(b *testing.B) logapi.Logger
+	}{
+		{
+			name: "OTLP",
+			loggerFn: func(b *testing.B) logapi.Logger {
+				logExp := setupOTLPLogExporter(b)
+				return setupLogging(b, logExp)
+			},
+		},
+		{
+			name: "STDOUT",
+			loggerFn: func(b *testing.B) logapi.Logger {
+				logExp := setupSTDOUTLogExporter(b)
+				return setupLogging(b, logExp)
+			},
+		},
+		{
+			name: "NOOP",
+			loggerFn: func(b *testing.B) logapi.Logger {
+				return global.Logger(b.Name())
+			},
+		},
+	}
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			// setup
+			logger := tc.loggerFn(b)
+
+			for b.Loop() {
+				// code to measure
+				var r logapi.Record
+				logger.Emit(context.Background(), r)
+			}
+		})
+	}
+}
+
 func BenchmarkSpanEvents(b *testing.B) {
 	testCases := []struct {
 		name     string
